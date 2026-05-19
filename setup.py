@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'speed_guard = perception_speed_policy.speed_guard:main'
         ],
     },
 )
