@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'perception_speed_policy'
+package_name = 'vision_speed_guard'
 
 setup(
     name=package_name,
