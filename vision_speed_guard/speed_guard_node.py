@@ -13,8 +13,7 @@ from vision_msgs.msg import Detection2DArray, LabelInfo
 from ackermann_msgs.msg import AckermannDriveStamped
 
 from ros2_pydata import from_detection2d_array, from_label_info
-from .speed_controllers import DriveController
-
+from .speed_config import controller 
 
 class PerceptionSpeedGuard(Node):
     """
@@ -28,7 +27,7 @@ class PerceptionSpeedGuard(Node):
         super().__init__('perception_speed_guard')
         self.seq          = 0
         self.speed_limit  = 0.0
-        self.controller   = DriveController()
+        self.controller   = controller
         self.id2label     = {}
 
         # Sensor QoS (keep only the latest message)

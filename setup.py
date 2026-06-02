@@ -1,4 +1,6 @@
-from setuptools import find_packages, setup
+from setuptools import setup, find_packages
+import os
+from glob import glob
 
 package_name = 'vision_speed_guard'
 
@@ -7,9 +9,13 @@ setup(
     version='0.0.0',
     packages=find_packages(exclude=['test']),
     data_files=[
+        # Install package resource index
         ('share/ament_index/resource_index/packages',
-            ['resource/' + package_name]),
+         ['resource/' + package_name]),
+        # Install package manifest
         ('share/' + package_name, ['package.xml']),
+        # Install launch files
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

@@ -1,59 +1,42 @@
+# speed_targets.py — Target classes and DriveController
+# ---------------------------------------------------------------
+# Students: read this to understand how each sign type behaves.
+# To change thresholds / speeds, edit speed_config.py instead.
+
 from collections import deque
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Speed helpers & config
-# ---------------------------------------------------------------------------
-
-KMH = lambda v: round(v / 3.6, 1)   # Convert km/h to m/s
-
-DEFAULT_SPEED   = 1.1   # m/s — normal driving speed
-ATTENTION_SPEED = 0.8   # m/s — slow down near hazards (e.g. crosswalk)
-
-# Signs that set a new speed limit (lower bound is kept across frames)
-SPEED_SIGNS = ['crosswalk_ahead', 'end_speed_limit', 'speed_limit_5']
-
-# Signs that temporarily override the speed limit (stop, red light, …)
-ACTION_SIGNS = ['no_entry', 'stop_sign', 'traffic_light_red', 'traffic_light_yellow']
-
-# ---------------------------------------------------------------------------
-# Target classes — one per sign / object type
-# ---------------------------------------------------------------------------
 
 class Target:
     """
-    Base class for a detectable sign the vehicle reacts to.
+    Base class for any detectable sign the vehicle reacts to.
 
-    History smoothing: a sign is considered 'visible' only when it appears
-    in more than `threshold` fraction of the last `len_history` frames.
-    This prevents false positives from a single noisy detection.
+    History smoothing: we keep a short boolean history of recent frames.
+    A sign is 'visible' only when it appears in > `threshold` of them —
+    this filters out single-frame false positives.
     """
 
-    def __init__(self, label, set_speed,
-                 threshold=0.3, len_history=10, min_height=50.0):
-        self.label      = label
-        self.set_speed  = set_speed       # target speed when reacting
-        self.threshold  = threshold       # fraction of history needed to be 'visible'
-        self.min_height = min_height      # bbox height (px) needed to be 'in range'
-        self.history    = deque([False] * len_history, maxlen=len_history)
-        self.detection  = None
+    def __init__(self, label, set_speed, threshold=0.3, len_history=10, min_height=50.0):
+        self.label       = label
+        self.set_speed   = set_speed     # speed to command when reacting
+        self.threshold   = threshold     # visibility threshold (fraction of history)
+        self.min_height  = min_height    # min bbox height (px) to be considered 'in range'
+        self.history     = deque([False] * len_history, maxlen=len_history)
+        self.detection   = None
         self.has_reacted = False
 
     @property
     def visible(self):
-        """True when the sign appears consistently enough to trust."""
+        """True when the sign appears consistently across recent frames."""
         return np.mean(self.history) > self.threshold
 
     @property
     def in_range(self):
-        """True when the sign is close enough to act on (big bbox)."""
+        """True when the bbox is large enough — i.e. the sign is close."""
         return self.detection is not None and self.detection.height >= self.min_height
 
     def update(self, detection, current_limit):
-        """
-        Call every frame with the latest detection (or None if not detected).
-        Returns the desired speed, or np.nan if this sign has no opinion.
-        """
+        """Called every frame. Returns desired speed, or np.nan = no opinion."""
         self.detection = detection
         self.history.append(detection is not None)
 
@@ -78,12 +61,11 @@ class Target:
 
 class StopSign(Target):
     """
-    Stops the vehicle and holds for `duration` seconds before resuming.
-    Uses a higher detection threshold (0.8) to avoid phantom stops.
+    Stops the vehicle, holds for `duration` seconds, then resumes.
+    Uses a stricter threshold (0.8) to avoid phantom stops.
     """
 
-    def __init__(self, label, threshold=0.8, min_height=50.0,
-                 set_speed=0.0, duration=3.0):
+    def __init__(self, label, threshold=0.8, min_height=50.0, set_speed=0.0, duration=3.0):
         super().__init__(label, set_speed, threshold=threshold, min_height=min_height)
         self.duration      = duration
         self.start_time_ns = None
@@ -92,22 +74,20 @@ class StopSign(Target):
         self.detection = detection
         self.history.append(detection is not None)
 
-        # Trigger stop on first confirmed sighting
+        # First confirmed sighting → start the stop timer
         if detection is not None and self.visible and self.in_range and not self.has_reacted:
             self.has_reacted   = True
             self.start_time_ns = detection.timestamp
             print(f"{detection.seq}: [{self.label}] Reacting! {detection}")
             return self.set_speed
 
-        # Hold the stop for the required duration
         if self.has_reacted:
             if detection is not None:
                 elapsed = (detection.timestamp - self.start_time_ns) / 1e9
                 if elapsed <= self.duration:
-                    return self.set_speed
-                # Duration elapsed — resume
+                    return self.set_speed          # still holding
                 self.has_reacted = self.start_time_ns = None
-                return current_limit
+                return current_limit               # timer done — resume
 
             if not self.visible:
                 print(f"[{self.label}] No longer visible — resetting.")
@@ -116,52 +96,73 @@ class StopSign(Target):
         return np.nan
 
 
-# ---------------------------------------------------------------------------
-# Sign registry — maps label → Target instance
-# ---------------------------------------------------------------------------
+class Vehicle(Target):
+    """
+    Leading vehicle — scales speed linearly with bbox height.
 
-TARGETS = {
-    'crosswalk_ahead':      Target('crosswalk_ahead',      set_speed=ATTENTION_SPEED),
-    'end_speed_limit':      Target('end_speed_limit',      set_speed=DEFAULT_SPEED),
-    'speed_limit_5':        Target('speed_limit_5',        set_speed=KMH(5)),
-    'no_entry':             Target('no_entry',             set_speed=0.0),
-    'traffic_light_red':    Target('traffic_light_red',    set_speed=0.0,      min_height=130.0),
-    'traffic_light_yellow': Target('traffic_light_yellow', set_speed=KMH(2),   min_height=0.0),
-    'stop_sign':            StopSign('stop_sign'),
-}
+    bbox height acts as a proxy for distance:
+      height < min_height  →  far away, keep current speed
+      min_height … max_height  →  getting closer, slow down proportionally
+      height >= max_height  →  too close, stop (speed = 0)
+    """
 
-# ---------------------------------------------------------------------------
-# DriveController — single entry point for the ROS node
-# ---------------------------------------------------------------------------
+    def __init__(self, label, threshold=0.5, len_history=10,
+                 min_height=150.0, max_height=300.0):
+        super().__init__(label, set_speed=None, threshold=threshold,
+                         len_history=len_history, min_height=min_height)
+        self.max_height = max_height
+
+    def update(self, detection, current_limit):
+        self.detection = detection
+        self.history.append(detection is not None)
+
+        if detection is None or not self.visible:
+            return np.nan
+
+        h = detection.height
+        if h >= self.max_height:
+            speed = 0.0                                                    # stop — too close
+        elif h >= self.min_height:
+            ratio = (h - self.min_height) / (self.max_height - self.min_height)
+            speed = current_limit * (1.0 - ratio)                         # slow down gradually
+        else:
+            speed = current_limit                                          # far enough — no change
+
+        print(f"[{self.label}] height={h:.0f}px  "
+              f"[{self.min_height:.0f}…{self.max_height:.0f}]  speed={speed:.2f}")
+        return speed
+
 
 class DriveController:
     """
-    Combines speed-sign limits and action-sign overrides into one speed value.
+    Merges speed-sign limits and action-sign overrides into one speed output.
 
-    Usage (each frame):
+    Speed signs  — set a persistent regulatory limit (lowest active one wins).
+    Action signs — temporarily override that limit (stop, red light, vehicle).
+
+    Usage each frame:
         speed = controller.update(list_of_detections)
     """
 
-    def __init__(self):
-        self.speed_limit = DEFAULT_SPEED   # regulatory limit (updated by speed signs)
-        self.drive_limit = np.nan          # transient override (stop, red light, …)
+    def __init__(self, targets, speed_signs, action_signs, default_speed):
+        self.targets      = targets
+        self.speed_signs  = speed_signs
+        self.action_signs = action_signs
+        self.speed_limit  = default_speed   # regulatory limit, updated by speed signs
+        self.drive_limit  = np.nan          # transient override
 
     def update(self, detections):
-        """
-        detections : list of Detection objects for the current frame.
-        Returns    : float — the speed the vehicle should drive at.
-        """
         by_label = {d.label: d for d in detections}
 
-        # 1. Speed signs set the regulatory limit (take the lowest active one)
-        speed_votes = [TARGETS[l].update(by_label.get(l), self.speed_limit)
-                       for l in SPEED_SIGNS]
+        # 1. Speed signs → update regulatory limit
+        speed_votes = [self.targets[l].update(by_label.get(l), self.speed_limit)
+                       for l in self.speed_signs]
         if not np.isnan(speed_votes).all():
             self.speed_limit = np.nanmin(speed_votes)
 
-        # 2. Action signs can temporarily override the limit (stop, red light, …)
-        action_votes = [TARGETS[l].update(by_label.get(l), self.speed_limit)
-                        for l in ACTION_SIGNS]
+        # 2. Action signs → compute transient override
+        action_votes = [self.targets[l].update(by_label.get(l), self.speed_limit)
+                        for l in self.action_signs]
         self.drive_limit = np.nan if np.isnan(action_votes).all() else np.nanmin(action_votes)
 
         # 3. Final speed = most restrictive of the two
