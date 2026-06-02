@@ -11,9 +11,9 @@ DEFAULT_SPEED   = 1.1   # m/s — normal cruising speed
 ATTENTION_SPEED = 0.8   # m/s — cautious speed near crosswalks etc.
 
 # Min bbox height (px) a sign must reach before we react — acts as a distance gate
-TRAFFIC_LIGHT_MIN_HEIGHT = 130.0
-VEHICLE_MIN_HEIGHT       = 150.0   # start slowing down
-VEHICLE_MAX_HEIGHT       = 300.0   # full stop
+DEFAULT_MIN_HEIGHT = 45.0
+VEHICLE_MIN_HEIGHT = 150.0   # start slowing down
+VEHICLE_MAX_HEIGHT = 300.0   # full stop
 
 # Signs that set a persistent speed limit (lowest active one wins)
 SPEED_SIGNS  = ['crosswalk_ahead', 'end_speed_limit', 'speed_limit_5']
@@ -22,11 +22,11 @@ SPEED_SIGNS  = ['crosswalk_ahead', 'end_speed_limit', 'speed_limit_5']
 ACTION_SIGNS = ['no_entry', 'stop_sign', 'traffic_light_red', 'traffic_light_yellow']
 
 TARGETS = {
-    'crosswalk_ahead':      Target('crosswalk_ahead',      ATTENTION_SPEED),
-    'end_speed_limit':      Target('end_speed_limit',      DEFAULT_SPEED),
-    'speed_limit_5':        Target('speed_limit_5',        KMH(5)),
-    'no_entry':             Target('no_entry',             0.0),
-    'traffic_light_red':    Target('traffic_light_red',    0.0, min_height=TRAFFIC_LIGHT_MIN_HEIGHT),
+    'crosswalk_ahead':      Target('crosswalk_ahead',      ATTENTION_SPEED, min_height=DEFAULT_MIN_HEIGHT),
+    'end_speed_limit':      Target('end_speed_limit',      DEFAULT_SPEED, min_height=DEFAULT_MIN_HEIGHT),
+    'speed_limit_5':        Target('speed_limit_5',        KMH(5), min_height=DEFAULT_MIN_HEIGHT),
+    'no_entry':             Target('no_entry',             0.0, min_height=DEFAULT_MIN_HEIGHT),
+    'traffic_light_red':    Target('traffic_light_red',    0.0, threshold=0.5, len_history=5, min_height=DEFAULT_MIN_HEIGHT),
     'traffic_light_yellow': Target('traffic_light_yellow', KMH(2), min_height=0.0),
     'stop_sign':            StopSign('stop_sign'),
     'vehicle':              Vehicle('vehicle', min_height=VEHICLE_MIN_HEIGHT, max_height=VEHICLE_MAX_HEIGHT),

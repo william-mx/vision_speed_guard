@@ -16,7 +16,7 @@ class Target:
     this filters out single-frame false positives.
     """
 
-    def __init__(self, label, set_speed, threshold=0.3, len_history=10, min_height=50.0):
+    def __init__(self, label, set_speed, threshold=0.3, len_history=10, min_height=45.0):
         self.label       = label
         self.set_speed   = set_speed     # speed to command when reacting
         self.threshold   = threshold     # visibility threshold (fraction of history)
@@ -65,7 +65,7 @@ class StopSign(Target):
     Uses a stricter threshold (0.8) to avoid phantom stops.
     """
 
-    def __init__(self, label, threshold=0.8, min_height=50.0, set_speed=0.0, duration=3.0):
+    def __init__(self, label, threshold=0.8, min_height=45.0, set_speed=0.0, duration=3.0):
         super().__init__(label, set_speed, threshold=threshold, min_height=min_height)
         self.duration      = duration
         self.start_time_ns = None
