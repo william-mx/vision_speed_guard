@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'speed_guard = vision_speed_guard.speed_guard_node:main'
         ],
     },
 )
