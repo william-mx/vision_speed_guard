@@ -63,7 +63,8 @@ class PerceptionSpeedGuard(Node):
         self.get_logger().info(
             f'speed={self.speed_limit:.2f}  '
             f'(regulatory={self.controller.speed_limit:.2f}, '
-            f'drive={self.controller.drive_limit:.2f})'
+            f'drive={self.controller.drive_limit:.2f})',
+            throttle_duration_sec=1.0,
         )
         self.seq += 1
 

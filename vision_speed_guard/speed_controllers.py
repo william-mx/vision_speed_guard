@@ -76,22 +76,21 @@ class StopSign(Target):
 
         # First confirmed sighting → start the stop timer
         if detection is not None and self.visible and self.in_range and not self.has_reacted:
-            self.has_reacted   = True
-            self.start_time_ns = detection.timestamp
+            self.has_reacted = True
+            self.start_time_s = detection.timestamp
             print(f"{detection.seq}: [{self.label}] Reacting! {detection}")
             return self.set_speed
 
         if self.has_reacted:
             if detection is not None:
-                elapsed = (detection.timestamp - self.start_time_ns) / 1e9
+                elapsed = detection.timestamp - self.start_time_s
                 if elapsed <= self.duration:
                     return self.set_speed          # still holding
-                self.has_reacted = self.start_time_ns = None
                 return current_limit               # timer done — resume
 
             if not self.visible:
                 print(f"[{self.label}] No longer visible — resetting.")
-                self.has_reacted = self.start_time_ns = None
+                self.has_reacted = self.start_time_s = None
 
         return np.nan
 
